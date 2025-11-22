@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Doodle Jump Clone - Mobile & Shooting</title>
+    <title>Stupid Jump - Mobile & Shooting</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Gochi+Hand&display=swap');
 
@@ -193,7 +193,7 @@
         </div>
 
         <div id="start-screen" class="overlay">
-            <h1>DOODLE<br>JUMP</h1>
+            <h1>STUPID<br>JUMP</h1>
             <p>Tilt or <span style="color:#6b8c42">← →</span> to Move</p>
             <p>Tap or <span style="color:#6b8c42">Space</span> to Shoot</p>
             <p style="font-size: 16px; margin-top:15px; color: #555;">Boost off the Green Bot • Shoot other Enemies</p>
@@ -1199,11 +1199,13 @@ function update(dt) {
         if (!e.active) return;
         
         if (e instanceof GreenMonster) {
+            // Ignore collision if falling or fleeing (dying)
+            if (e.state === 'FLEEING' || e.state === 'DYING') return;
+
             let cx = e.x + e.w/2; let cy = e.y + e.h/2;
             if (player.x < cx + 20 && player.x + player.width > cx - 20 &&
                 player.y < cy + 20 && player.y + player.height > cy - 20) 
             {
-                 // Fix: Added mikeBoostActive to immunity check
                  if (player.jetpackActive || player.propellerActive || player.springBoostActive || player.mikeBoostActive) return; // Immune!
 
                  if (player.vy > 0 && player.y + player.height - player.vy < cy - 5) {
