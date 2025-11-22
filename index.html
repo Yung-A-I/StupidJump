@@ -239,6 +239,137 @@
  * DOODLE JUMP CLONE
  */
 
+// --- AUDIO MANAGER ---
+// Uses Web Audio API to synthesize sounds (no external files needed!)
+const sounds = {
+    ctx: null,
+    init: function() {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        } else if (this.ctx.state === 'suspended') {
+            this.ctx.resume();
+        }
+    },
+    play: function(type) {
+        if (!this.ctx) return;
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        switch (type) {
+            case 'jump':
+                osc.frequency.setValueAtTime(150, t);
+                osc.frequency.linearRampToValueAtTime(300, t + 0.1);
+                gain.gain.setValueAtTime(0.1, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                osc.start(t);
+                osc.stop(t + 0.1);
+                break;
+            case 'shoot':
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(800, t);
+                osc.frequency.exponentialRampToValueAtTime(100, t + 0.1);
+                gain.gain.setValueAtTime(0.1, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                osc.start(t);
+                osc.stop(t + 0.1);
+                break;
+            case 'spring':
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(150, t);
+                osc.frequency.linearRampToValueAtTime(600, t + 0.3);
+                gain.gain.setValueAtTime(0.1, t);
+                gain.gain.linearRampToValueAtTime(0, t + 0.3);
+                osc.start(t);
+                osc.stop(t + 0.3);
+                break;
+            case 'break':
+                // Simple noise buffer for break/crumble
+                this.playNoise(0.15);
+                break;
+            case 'monsterHit':
+                // Noise + Low osc
+                this.playNoise(0.1);
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(100, t);
+                osc.frequency.exponentialRampToValueAtTime(10, t + 0.1);
+                gain.gain.setValueAtTime(0.2, t);
+                gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+                osc.start(t);
+                osc.stop(t + 0.1);
+                break;
+            case 'boost': // Mike Throw
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(200, t);
+                osc.frequency.linearRampToValueAtTime(50, t + 0.3);
+                gain.gain.setValueAtTime(0.3, t);
+                gain.gain.linearRampToValueAtTime(0, t + 0.3);
+                osc.start(t);
+                osc.stop(t + 0.3);
+                break;
+            case 'gameOver':
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, t);
+                osc.frequency.linearRampToValueAtTime(50, t + 0.5);
+                gain.gain.setValueAtTime(0.3, t);
+                gain.gain.linearRampToValueAtTime(0, t + 0.5);
+                osc.start(t);
+                osc.stop(t + 0.5);
+                break;
+        }
+    },
+    playNoise: function(duration) {
+        if (!this.ctx) return;
+        const bufferSize = this.ctx.sampleRate * duration;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        const noise = this.ctx.createBufferSource();
+        noise.buffer = buffer;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+        noise.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+    },
+    // Loop handlers
+    jetpackOsc: null,
+    jetpackGain: null,
+    startLoop: function(type) {
+        if (!this.ctx || this.jetpackOsc) return;
+        this.jetpackOsc = this.ctx.createOscillator();
+        this.jetpackGain = this.ctx.createGain();
+        
+        if (type === 'jetpack') {
+            this.jetpackOsc.type = 'sawtooth';
+            this.jetpackOsc.frequency.value = 50;
+        } else { // Propeller
+            this.jetpackOsc.type = 'square';
+            this.jetpackOsc.frequency.value = 15; // Low clicking
+        }
+        
+        this.jetpackOsc.connect(this.jetpackGain);
+        this.jetpackGain.connect(this.ctx.destination);
+        this.jetpackGain.gain.setValueAtTime(0.05, this.ctx.currentTime);
+        this.jetpackOsc.start();
+    },
+    stopLoop: function() {
+        if (this.jetpackOsc) {
+            this.jetpackOsc.stop();
+            this.jetpackOsc.disconnect();
+            this.jetpackGain.disconnect();
+            this.jetpackOsc = null;
+            this.jetpackGain = null;
+        }
+    }
+};
+
 // --- Configuration ---
 const CANVAS_WIDTH = 400;
 const CANVAS_HEIGHT = 600;
@@ -303,6 +434,8 @@ const keys = { left: false, right: false };
 let tiltX = 0; 
 
 window.addEventListener('keydown', (e) => {
+    if (gameState === 0 && e.key) sounds.init(); // Init sound on interaction
+
     if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') keys.left = true;
     if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') keys.right = true;
     
@@ -323,6 +456,7 @@ window.addEventListener('keyup', (e) => {
 });
 
 window.addEventListener('touchstart', (e) => {
+    sounds.init(); // Init sound on touch
     if(e.target === canvas) e.preventDefault();
     if (gameState === 1) shoot();
 }, {passive: false});
@@ -347,9 +481,13 @@ function shoot() {
     
     let type = (currentSkin === 'baseball') ? 'bat' : 'normal';
     bullets.push(new Bullet(spawnX, player.y, type));
+    
+    // Only play shoot sound if not bat (bat has whoosh implied)
+    if (type !== 'bat') sounds.play('shoot');
 
     if (type === 'bat') {
         player.hasBat = false;
+        sounds.play('jump'); // Small sound for throw
     }
 }
 
@@ -467,6 +605,7 @@ class Doodler {
         this.jetpackActive = false; this.jetpackTimer = 0;
         this.propellerActive = false; this.propellerTimer = 0; this.propellerAngle = 0;
         this.springBoostActive = false;
+        this.mikeBoostActive = false; // New Flag for Mike Invincibility
         
         this.hasBat = true; // For Tungtung
     }
@@ -483,16 +622,26 @@ class Doodler {
         else if (this.x > CANVAS_WIDTH) this.x = -this.width;
 
         // Vertical Movement
-        if (this.vy > 0) this.springBoostActive = false; // Disable spring invincibility when falling
+        if (this.vy > 0) {
+            // Falling - Reset Invincibility flags
+            this.springBoostActive = false;
+            this.mikeBoostActive = false;
+        }
 
         if (this.jetpackActive) {
             this.vy = -12; this.jetpackTimer -= dt;
-            if (this.jetpackTimer <= 0) { this.jetpackActive = false; this.vy = -8; }
+            if (this.jetpackTimer <= 0) { 
+                this.jetpackActive = false; this.vy = -8; 
+                sounds.stopLoop();
+            }
         } else if (this.propellerActive) {
-            this.vy = -8; // Slower than jetpack
+            this.vy = -8; 
             this.propellerTimer -= dt;
             this.propellerAngle += 0.8;
-            if (this.propellerTimer <= 0) { this.propellerActive = false; this.vy = -5; }
+            if (this.propellerTimer <= 0) { 
+                this.propellerActive = false; this.vy = -5; 
+                sounds.stopLoop();
+            }
         } else { 
             this.vy += GRAVITY; 
         }
@@ -746,6 +895,7 @@ class Enemy {
     }
     hit() {
         this.active = false;
+        sounds.play('monsterHit');
     }
 }
 
@@ -779,6 +929,7 @@ class FlyingMonster {
     }
     hit() {
         this.active = false;
+        sounds.play('monsterHit');
     }
 }
 
@@ -844,6 +995,7 @@ class GreenMonster {
     hit() {
         if (this.state === 'BOOSTING') return;
         mikeHits++;
+        sounds.play('monsterHit');
         if (mikeHits < 3) { this.state = 'FLEEING'; this.vy = -15; } else { this.state = 'DYING'; this.vy = 5; }
     }
     
@@ -853,6 +1005,9 @@ class GreenMonster {
         this.boostTimer = 30; 
         player.vy = BOOST_FORCE; 
         player.y = this.y - player.height;
+        // Fix: Make player invincible while flying up
+        player.mikeBoostActive = true;
+        sounds.play('boost');
     }
 
     draw() {
@@ -910,8 +1065,8 @@ function init() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     
-    document.getElementById('start-btn').onclick = startGame;
-    document.getElementById('restart-btn').onclick = startGame;
+    document.getElementById('start-btn').onclick = () => { sounds.init(); startGame(); };
+    document.getElementById('restart-btn').onclick = () => { sounds.init(); startGame(); };
     document.getElementById('shop-btn').onclick = openShop;
     document.getElementById('shop-btn-over').onclick = openShop;
     document.getElementById('close-shop-btn').onclick = closeShop;
@@ -1020,16 +1175,22 @@ function update(dt) {
                 if (p.item !== ITEMS.NONE) {
                     applyItem(p.item);
                     if (p.item !== ITEMS.SPRING) p.item = ITEMS.NONE;
-                    else p.springAnim = 15;
+                    else {
+                        p.springAnim = 15;
+                        sounds.play('spring');
+                    }
                 }
                 
                 if (wasSpring) {
                     player.vy = SPRING_FORCE;
                     player.springBoostActive = true; // Immune start
                 } else if (p.type === TYPES.BREAKING) {
-                    if (p.breakState === 0) { p.breakState = 1; player.vy = JUMP_FORCE; }
-                    else if (p.breakState === 1) { p.breakState = 2; player.vy = JUMP_FORCE; }
-                } else player.vy = JUMP_FORCE;
+                    if (p.breakState === 0) { p.breakState = 1; player.vy = JUMP_FORCE; sounds.play('break'); }
+                    else if (p.breakState === 1) { p.breakState = 2; player.vy = JUMP_FORCE; sounds.play('break'); }
+                } else {
+                    player.vy = JUMP_FORCE;
+                    sounds.play('jump');
+                }
             }
         });
     }
@@ -1042,7 +1203,8 @@ function update(dt) {
             if (player.x < cx + 20 && player.x + player.width > cx - 20 &&
                 player.y < cy + 20 && player.y + player.height > cy - 20) 
             {
-                 if (player.jetpackActive || player.propellerActive || player.springBoostActive) return; // Immune!
+                 // Fix: Added mikeBoostActive to immunity check
+                 if (player.jetpackActive || player.propellerActive || player.springBoostActive || player.mikeBoostActive) return; // Immune!
 
                  if (player.vy > 0 && player.y + player.height - player.vy < cy - 5) {
                       if (e.state === 'IDLE') { e.triggerBoost(player); score += 200; }
@@ -1057,10 +1219,11 @@ function update(dt) {
         if (player.x < e.x + e.width && player.x + player.width > e.x &&
             player.y < e.y + e.height && player.y + player.height > e.y) 
         {
-            if (player.jetpackActive || player.propellerActive || player.springBoostActive) return; // Immune!
+            if (player.jetpackActive || player.propellerActive || player.springBoostActive || player.mikeBoostActive) return; // Immune!
 
             if (player.vy > 0 && player.y + player.height - player.vy < e.y + e.height / 2) {
                 e.active = false; player.vy = JUMP_FORCE * 1.5; score += 100;
+                sounds.play('monsterHit');
             } else {
                 if (player.hasShield) { player.hasShield = false; e.active = false; player.vy = -5; }
                 else gameOver();
@@ -1091,8 +1254,14 @@ function update(dt) {
 }
 
 function applyItem(type) {
-    if (type === ITEMS.JETPACK) { player.jetpackActive = true; player.jetpackTimer = 180; }
-    else if (type === ITEMS.PROPELLER) { player.propellerActive = true; player.propellerTimer = 220; }
+    if (type === ITEMS.JETPACK) { 
+        player.jetpackActive = true; player.jetpackTimer = 180; 
+        sounds.startLoop('jetpack');
+    }
+    else if (type === ITEMS.PROPELLER) { 
+        player.propellerActive = true; player.propellerTimer = 220; 
+        sounds.startLoop('propeller');
+    }
     else if (type === ITEMS.SHIELD) { player.hasShield = true; }
 }
 
@@ -1132,6 +1301,8 @@ function gameOver() {
         highScore = score;
         localStorage.setItem('doodle_highscore_adv', highScore);
     }
+    sounds.stopLoop();
+    sounds.play('gameOver');
     
     // Update Total Currency
     totalCurrency += score;
