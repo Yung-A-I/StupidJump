@@ -1157,9 +1157,23 @@ function update(dt) {
 
             if (hit) {
                 if (e instanceof GreenMonster) {
-                    if (e.state === 'IDLE' || e.state === 'BOOSTING') { e.hit(); b.active = false; score += 50; }
+                    if (e.state === 'IDLE' || e.state === 'BOOSTING') { 
+                        e.hit(); 
+                        if (b.type === 'bat') {
+                            b.vy = 5; // Bat bounces off enemy and falls
+                        } else {
+                            b.active = false; 
+                        }
+                        score += 50; 
+                    }
                 } else {
-                    e.hit(); b.active = false; score += 50; 
+                    e.hit(); 
+                    if (b.type === 'bat') {
+                        b.vy = 5; // Bat bounces off enemy and falls
+                    } else {
+                        b.active = false; 
+                    }
+                    score += 50; 
                 }
             }
         });
@@ -1210,9 +1224,21 @@ function update(dt) {
 
                  if (player.vy > 0 && player.y + player.height - player.vy < cy - 5) {
                       if (e.state === 'IDLE') { e.triggerBoost(player); score += 200; }
-                      else { if (player.hasShield) { player.hasShield = false; player.vy = -5; } else gameOver(); }
+                      else { 
+                          if (player.hasShield) { 
+                              player.hasShield = false; 
+                              player.vy = -10; // Bounce up and away
+                              if (e.state !== 'BOOSTING') e.hit(); 
+                          } 
+                          else gameOver(); 
+                      }
                  } else {
-                     if (player.hasShield) { player.hasShield = false; player.vy = -5; } else gameOver();
+                     if (player.hasShield) { 
+                         player.hasShield = false; 
+                         player.vy = -5; 
+                         e.hit(); 
+                     } 
+                     else gameOver();
                  }
             }
             return;
@@ -1249,7 +1275,8 @@ function update(dt) {
         document.getElementById('score-display').innerText = score;
         
         platforms = platforms.filter(p => p.y < CANVAS_HEIGHT);
-        enemies = enemies.filter(e => e.active); 
+        // Fix: Remove enemies that have fallen off screen so new ones can spawn
+        enemies = enemies.filter(e => e.active && e.y < CANVAS_HEIGHT); 
         
         generateWorld();
     }
